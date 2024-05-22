@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Nombre del usuario a eliminar
+USER_TO_DELETE="$1"
+
+# Archivo de configuración del usuario en sudoers.d
+CONFIG_FILE="/etc/sudoers.d/${USER_TO_DELETE}"
+
+# Archivo sudoers principal
+SUDOERS_FILE="/etc/sudoers"
+
+# Verifica si el usuario a eliminar fue especificado
+if [ -z "$USER_TO_DELETE" ]; then
+  echo "Por favor, proporciona el nombre del usuario a eliminar."
+  exit 1
+fi
+
+# Eliminar el archivo de configuración del usuario
+if [ -f "$CONFIG_FILE" ]; then
+  echo "Eliminando el archivo de configuración del usuario: $CONFIG_FILE"
+  rm "$CONFIG_FILE"
+else
+  echo "No se encontró el archivo de configuración: $CONFIG_FILE"
+fi
+
+# Eliminar el usuario del sistema
+if id "$USER_TO_DELETE" &>/dev/null; then
+  echo "Eliminando el usuario del sistema: $USER_TO_DELETE"
+  userdel "$USER_TO_DELETE"
+else
+  echo "No se encontró el usuario en el sistema: $USER_TO_DELETE"
+fi
+
+# Verificar la configuración de sudo para errores de sintaxis
+echo "Verificando la configuración de sudo..."
+if visudo -c; then
+  echo "La configuración de sudo es válida."
+else
+  echo "Error en la configuración de sudo. Revisa los archivos de configuración."
+  exit 1
+fi
+
+echo "Proceso completado exitosamente."
