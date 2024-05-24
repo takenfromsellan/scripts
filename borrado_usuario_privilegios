@@ -1,3 +1,10 @@
+Este script surge de la necesidad de borrar un usuario que contenga su propio archivo.local con los comandos que requiere, por lo tanto existe un INCLUDE a ese archivo en el sudoer general del equipo.
+Esto implica que no se puede solo borrar el usuario, ya que de hacer solo eso podriamos generar un error de sintaxis. Lo cual impacta de forma negativa en el equipo ya que ningun usuario podria realizar invocacion sudo.
+
+Por lo tanto, se necesita borrar usuario, y con la cuenta root, eliminar la linea del SUDOER general asociada al usuario a borrar. Por ultimo eliminar el archivo.local alojado en el directorio /etc/sudoers.d.
+
+
+
 #!/bin/bash
 
 # Nombre del usuario a eliminar
