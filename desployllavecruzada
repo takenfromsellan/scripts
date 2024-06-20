@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# Archivo que contiene la lista de servidores
+SERVERS_LIST="listado.txt"
+
+# Llave pública a desplegar
+PUBLIC_KEY="id_rsa.pub"
+
+# Usuario destino
+USER="segdatos"
+
+# Verificar si el archivo con la lista de servidores existe
+if [ ! -f "$SERVERS_LIST" ]; then
+    echo "El archivo $SERVERS_LIST no existe."
+    exit 1
+fi
+
+# Verificar si el archivo de la llave pública existe
+if [ ! -f "$PUBLIC_KEY" ]; then
+    echo "El archivo $PUBLIC_KEY no existe."
+    exit 1
+fi
+
+# Leer el contenido de la llave pública
+KEY_CONTENT=$(cat "$PUBLIC_KEY")
+
+# Iterar sobre cada servidor en la lista
+while IFS= read -r SERVER; do
+    echo "Desplegando llave en $SERVER..."
+    
+    # Comando para crear el directorio .ssh si no existe y agregar la llave pública
+    ssh "$USER@$SERVER" "mkdir -p ~/.ssh && echo '$KEY_CONTENT' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && chmod 700 ~/.ssh"
+    
+    if [ $? -eq 0 ]; then
+        echo "Llave desplegada en $SERVER con éxito."
+    else
+        echo "Error al desplegar la llave en $SERVER."
+    fi
+done < "$SERVERS_LIST"
