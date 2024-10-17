@@ -1,0 +1,177 @@
+import oracledb
+import sys
+import os
+import csv
+from datetime import datetime
+
+# Parámetros de conexión fijos
+FIXED_USER = 'NNNNNNNNNNN'
+FIXED_PASSWORD = 'NNNNNNNNNNN'
+
+# Inicializar el cliente Oracle (ajusta la ruta a donde hayas instalado el Instant Client)
+oracledb.init_oracle_client(lib_dir="C:/Oracle/instantclient_21_9")  # Cambia esta ruta
+
+def read_connection_params(file_path):
+    """
+    Lee los parámetros de conexión desde un archivo de texto.
+    Cada línea debe tener: Bases, Host, Puerto, SID, Estado, Privilegios, Campo1
+    """
+    connections = []
+    try:
+        with open(file_path, 'r') as file:
+            for line_num, line in enumerate(file, start=1):
+                # Ignorar líneas vacías o comentarios
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if line_num == 1:
+                    # Omitir la línea de encabezado
+                    continue
+                # Dividir la línea por cualquier espacio en blanco (espacios o tabulaciones)
+                parts = line.split()
+                if len(parts) < 4:
+                    print(f"Formato inválido en la línea {line_num}: {line}")
+                    continue
+                # Extraer los campos necesarios
+                bases = parts[0].strip()
+                host = parts[1].strip()
+                puerto = parts[2].strip()
+                sid = parts[3].strip()
+                connections.append({
+                    'bases': bases,
+                    'host': host,
+                    'port': puerto,
+                    'sid': sid
+                })
+    except FileNotFoundError:
+        print(f"Archivo {file_path} no encontrado.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error al leer el archivo {file_path}: {e}")
+        sys.exit(1)
+    return connections
+
+def get_dsn(hostname, port, sid):
+    """
+    Construye el DSN para la conexión a Oracle.
+    """
+    return f"{hostname}:{port}/{sid}"
+
+def fetch_users(cursor):
+    """
+    Obtiene una lista de usuarios a listar.
+    Excluye usuarios del sistema como SYS, SYSTEM, etc.
+    """
+    query = """
+    SELECT username FROM dba_users
+    WHERE username NOT IN ('SYS', 'SYSTEM', 'OUTLN', 'DBSNMP', 'SYSMAN')
+    ORDER BY username
+    """
+    cursor.execute(query)
+    return [row[0] for row in cursor.fetchall()]
+
+def fetch_roles(cursor, username):
+    """
+    Obtiene los roles asignados a un usuario específico.
+    """
+    query = """
+    SELECT granted_role FROM dba_role_privs
+    WHERE grantee = :username
+    ORDER BY granted_role
+    """
+    cursor.execute(query, [username])
+    return [row[0] for row in cursor.fetchall()]
+
+def export_to_csv(data, output_file):
+    """
+    Exporta los datos recopilados a un archivo CSV.
+    La estructura del CSV será:
+    Base, Usuario, Rol
+    """
+    try:
+        with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['Base', 'Usuario', 'Rol']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            for entry in data:
+                writer.writerow(entry)
+        print(f"Datos exportados exitosamente a {output_file}")
+    except Exception as e:
+        print(f"Error al exportar los datos a CSV: {e}")
+
+def process_database(conn_params, collected_data):
+    """
+    Procesa una base de datos: obtiene usuarios y sus roles.
+    """
+    dsn = get_dsn(conn_params['host'], conn_params['port'], conn_params['sid'])
+    try:
+        connection = oracledb.connect(
+            user=FIXED_USER,
+            password=FIXED_PASSWORD,
+            dsn=dsn
+            # No se especifica el modo de autenticación
+        )
+        cursor = connection.cursor()
+        print(f"\nConectado a la base '{conn_params['bases']}' (SID: {conn_params['sid']}) en {conn_params['host']}:{conn_params['port']}.")
+        
+        users = fetch_users(cursor)
+        print(f"Usuarios encontrados en '{conn_params['bases']}': {len(users)}")
+        
+        for user in users:
+            roles = fetch_roles(cursor, user)
+            if roles:
+                for role in roles:
+                    collected_data.append({
+                        'Base': conn_params['bases'],
+                        'Usuario': user,
+                        'Rol': role
+                    })
+            else:
+                collected_data.append({
+                    'Base': conn_params['bases'],
+                    'Usuario': user,
+                    'Rol': 'Sin roles asignados'
+                })
+        
+        cursor.close()
+        connection.close()
+        print(f"Procesamiento completado para la base '{conn_params['bases']}'.\n")
+    
+    except oracledb.Error as e:
+        error, = e.args
+        print(f"Error de conexión a la base '{conn_params['bases']}': {error.message}")
+
+def main():
+    # Ruta al archivo de parámetros de conexión
+    file_path = 'db_connections.txt'  # Asegúrate de que esté en el directorio correcto
+
+    # Verificar si el archivo existe
+    if not os.path.exists(file_path):
+        print(f"El archivo {file_path} no existe.")
+        sys.exit(1)
+
+    # Leer los parámetros de conexión
+    connections = read_connection_params(file_path)
+
+    if not connections:
+        print("No se encontraron parámetros de conexión válidos.")
+        sys.exit(1)
+
+    # Lista para almacenar los datos recopilados
+    collected_data = []
+
+    # Procesar cada base de datos
+    for conn in connections:
+        process_database(conn, collected_data)
+
+    if collected_data:
+        # Generar nombre de archivo con timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = f"usuarios_roles_{timestamp}.csv"
+        export_to_csv(collected_data, output_file)
+    else:
+        print("No se recopilaron datos para exportar.")
+
+if __name__ == "__main__":
+    main()
